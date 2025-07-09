@@ -2,7 +2,7 @@ name: TradingView Scraper A5
 
 on:
   schedule:
-    - cron: "30 11 * * 1-5"
+    - cron: "30 13 * * 1-5"
   workflow_dispatch:
 
 jobs:
