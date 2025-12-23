@@ -28,9 +28,10 @@ jobs:
           echo "GOOGLE_PRIVATE_KEY=\"${{ secrets.GOOGLE_PRIVATE_KEY }}\"" >> .env
           echo "ACCOUNT_START=1800" >> .env
           echo "ACCOUNT_END=2502" >> .env
-          echo "BATCH_SIZE=90" >> .env
+          echo "BATCH_SIZE=141" >> .env
 
       - run: echo "${{ secrets.COOKIES_BASE64 }}" | base64 -d > cookies.json
 
       - run: node index.js ${{ matrix.batch }}
+
 
