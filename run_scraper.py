@@ -14,13 +14,12 @@ from bs4 import BeautifulSoup
 import gspread
 from webdriver_manager.chrome import ChromeDriverManager
 
-# Force immediate log output
 def log(msg):
     print(msg, flush=True)
 
 # ---------------- CONFIG & SHARDING ---------------- #
 SHARD_INDEX = int(os.getenv("SHARD_INDEX", "0"))
-SHARD_STEP = int(os.getenv("SHARD_STEP", "1"))
+SHARD_STEP  = int(os.getenv("SHARD_STEP", "1"))
 
 checkpoint_file = os.getenv("CHECKPOINT_FILE", f"checkpoint_{SHARD_INDEX}.txt")
 last_i = int(open(checkpoint_file).read()) if os.path.exists(checkpoint_file) else 0
@@ -35,7 +34,7 @@ def create_driver():
     opts.add_argument("--disable-gpu")
     opts.add_argument("--window-size=1920,1080")
     opts.add_argument("--blink-settings=imagesEnabled=false")
-    opts.add_experimental_option('excludeSwitches', ['enable-logging'])
+    opts.add_experimental_option("excludeSwitches", ["enable-logging"])
     opts.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -48,7 +47,7 @@ def create_driver():
     )
     driver.set_page_load_timeout(40)
 
-    # ---- COOKIE LOGIC (UNCHANGED) ----
+    # ---- COOKIE LOGIC ----
     if os.path.exists("cookies.json"):
         try:
             driver.get("https://in.tradingview.com/")
@@ -84,10 +83,7 @@ def scrape_tradingview(driver, url):
         soup = BeautifulSoup(driver.page_source, "html.parser")
         values = [
             el.get_text().replace('−', '-').replace('∅', 'None')
-            for el in soup.find_all(
-                "div",
-                class_="valueValue-l31H9iuA apply-common-tooltip"
-            )
+            for el in soup.find_all("div", class_="valueValue-l31H9iuA apply-common-tooltip")
         ]
         return values
     except (TimeoutException, NoSuchElementException):
@@ -101,12 +97,11 @@ log("📊 Connecting to Google Sheets...")
 try:
     gc = gspread.service_account("credentials.json")
     sheet_main = gc.open("Stock List").worksheet("Sheet1")
-    sheet_data = gc.open("Tradingview Data Reel Experimental May").worksheet("Sheet5")
+    sheet_data = gc.open("MV2 for SQL").worksheet("Sheet2")
 
-    company_list = sheet_main.col_values(5)
+    company_list = sheet_main.col_values(3)
     name_list = sheet_main.col_values(1)
 
-    current_date = date.today().strftime("%m/%d/%Y")
     log(f"✅ Setup complete | Shard {SHARD_INDEX} | Resume index {last_i}")
 except Exception as e:
     log(f"❌ Setup Error: {e}")
@@ -115,7 +110,9 @@ except Exception as e:
 # ---------------- MAIN LOOP ---------------- #
 driver = create_driver()
 batch_list = []
-BATCH_SIZE = 50
+
+# Each row = 3 updates (A, C, G..), so keep this bigger
+BATCH_SIZE = 150
 
 try:
     for i in range(last_i, len(company_list)):
@@ -126,6 +123,7 @@ try:
 
         url = company_list[i]
         name = name_list[i] if i < len(name_list) else f"Row {i}"
+        current_date = date.today().strftime("%m/%d/%Y")  # update daily even for long runs
 
         log(f"🔍 [{i}] Scraping: {name}")
 
@@ -141,20 +139,26 @@ try:
             if values == "RESTART":
                 values = []
 
+        target_row = i + 1
+
         if isinstance(values, list) and values:
-            target_row = i + 1
-            batch_list.append({
-                "range": f"A{target_row}",
-                "values": [[name, current_date] + values]
-            })
+            # ✅ Only write A, C, and G onward. DO NOT touch B / D / E / F.
+            batch_list.append({"range": f"A{target_row}", "values": [[name]]})
+            batch_list.append({"range": f"C{target_row}", "values": [[current_date]]})
+            batch_list.append({"range": f"G{target_row}", "values": [values]})
+
             log(f"📦 Buffered ({len(batch_list)}/{BATCH_SIZE})")
         else:
-            log(f"⏭️ Skipped {name}")
+            # Optional: still write name/date even if values missing (your choice)
+            # If you don't want even A/C touched when skipped, comment these 2 lines:
+            batch_list.append({"range": f"A{target_row}", "values": [[name]]})
+            batch_list.append({"range": f"C{target_row}", "values": [[current_date]]})
+            log(f"⏭️ Skipped values for {name} (A/C updated only)")
 
         if len(batch_list) >= BATCH_SIZE:
             try:
                 sheet_data.batch_update(batch_list)
-                log(f"🚀 Saved {len(batch_list)} rows")
+                log(f"🚀 Saved {len(batch_list)} updates")
                 batch_list = []
             except Exception as e:
                 log(f"⚠️ API Error: {e}")
@@ -171,8 +175,13 @@ finally:
     if batch_list:
         try:
             sheet_data.batch_update(batch_list)
-            log(f"✅ Final save: {len(batch_list)} rows")
+            log(f"✅ Final save: {len(batch_list)} updates")
         except:
             pass
-    driver.quit()
+
+    try:
+        driver.quit()
+    except:
+        pass
+
     log("🏁 Scraping completed successfully")
