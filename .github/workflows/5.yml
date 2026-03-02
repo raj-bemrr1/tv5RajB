@@ -3,9 +3,8 @@ name: T5 (Shards 20–24)
 on:
   workflow_dispatch:   # Manual run
   schedule:
-    # 5:34 PM IST = 12:04 UTC
-    # Runs ONLY Monday–Friday
-    - cron: '50 11 * * 1-5''
+    # Runs at 5:20 PM IST (11:50 UTC), Monday–Friday
+    - cron: '50 11 * * 1-5'
 
 jobs:
   scrape:
@@ -15,32 +14,34 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        shard: [20,21,22,23,24]
+        shard: [20, 21, 22, 23, 24]
 
     env:
       SHARD_STEP: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: pip install selenium beautifulsoup4 gspread webdriver-manager
 
-      - name: Write credentials
+      - name: 🔑 Write credentials
         run: |
           echo '${{ secrets.GSPREAD_CREDENTIALS }}' > credentials.json
           echo '${{ secrets.TRADINGVIEW_COOKIES }}' > cookies.json
 
-      - name: Init checkpoint
+      - name: 🧾 Init checkpoint
         run: |
           FILE="checkpoint_group5_${{ matrix.shard }}.txt"
-          [ ! -f "$FILE" ] && echo "1" > "$FILE"
+          if [ ! -f "$FILE" ]; then echo "1" > "$FILE"; fi
 
-      - name: Run scraper
+      - name: 🚀 Run scraper
         env:
           SHARD_INDEX: ${{ matrix.shard }}
           CHECKPOINT_FILE: checkpoint_group5_${{ matrix.shard }}.txt
