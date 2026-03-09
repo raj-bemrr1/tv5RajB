@@ -184,7 +184,7 @@ def bs4_fallback_values(drv):
 def validate_week(values):
     if not values:
         return False
-    return len(values) == EXPECTED_COUNT
+    return len(values) >= EXPECTED_COUNT
 
 
 # ---------------- SCRAPER ---------------- #
@@ -229,11 +229,12 @@ def scrape_week(url):
                 values = bs4_fallback_values(drv)
 
             if validate_week(values):
-                log(f"   📊 Found {len(values)} correct WEEK values")
+                values = values[:EXPECTED_COUNT]   # force only first 12
+                log(f"   📊 Found {len(values)} WEEK values")
                 log(f"   📝 WEEK Preview: {values[:8]}...")
                 return values
 
-            log(f"   ⚠️ WEEK invalid data on attempt {attempt+1}. Expected {EXPECTED_COUNT}, got {len(values)}")
+            log(f"   ⚠️ WEEK invalid data on attempt {attempt+1}. Expected at least {EXPECTED_COUNT}, got {len(values)}")
 
         except Exception as e:
             log(f"   ❌ WEEK ERROR: {str(e)[:120]}")
@@ -320,10 +321,13 @@ try:
 
         prev_week = vals_week.copy() if vals_week else []
 
+        # extra safety: sheet will never get more than 12 values
+        vals_week = vals_week[:EXPECTED_COUNT] if vals_week else []
+
         row_idx = i + 1
         batch_list.append({"range": f"A{row_idx}", "values": [[name]]})
         batch_list.append({"range": f"J{row_idx}", "values": [[current_date]]})
-        batch_list.append({"range": f"{WEEK_START_COL_LETTER}{row_idx}", "values": [vals_week] if vals_week else [[]]})
+        batch_list.append({"range": f"{WEEK_START_COL_LETTER}{row_idx}:AP{row_idx}", "values": [vals_week + [""] * (EXPECTED_COUNT - len(vals_week))]})
 
         buffered_rows += 1
 
