@@ -1,4 +1,4 @@
-name: T5 Shard 4 (Rows 2041-2550)
+name: T5 Shard 4 (Rows 2041-2550) week
 on:
   workflow_dispatch:
   schedule:
