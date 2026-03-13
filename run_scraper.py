@@ -26,7 +26,7 @@ END_ROW = START_ROW + SHARD_SIZE
 
 checkpoint_file = os.getenv("CHECKPOINT_FILE", f"checkpoint_day_{SHARD_INDEX}.txt")
 EXPECTED_COUNT = 20
-BATCH_SIZE = 5 
+BATCH_SIZE = 100 
 RESTART_EVERY_ROWS = 20
 
 # Column Mapping
