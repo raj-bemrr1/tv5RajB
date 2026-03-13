@@ -27,7 +27,7 @@ END_ROW = START_ROW + SHARD_SIZE
 checkpoint_file = os.getenv("CHECKPOINT_FILE", f"checkpoint_week_{SHARD_INDEX}.txt")
 
 EXPECTED_COUNT = 15 
-BATCH_SIZE = 10  # Increased for efficiency
+BATCH_SIZE = 100  # Increased for efficiency
 RESTART_EVERY_ROWS = 20
 COOKIE_FILE = os.getenv("COOKIE_FILE", "cookies.json")
 CHROME_DRIVER_PATH = ChromeDriverManager().install()
