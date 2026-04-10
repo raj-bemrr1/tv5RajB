@@ -27,11 +27,11 @@ checkpoint_file = os.getenv("CHECKPOINT_FILE", f"checkpoint_day_{SHARD_INDEX}.tx
 EXPECTED_COUNT = 26
 BATCH_SIZE = 100
 RESTART_EVERY_ROWS = 20
-MAX_RETRIES = 2  # How many extra times to try a symbol if it returns 0 values
+MAX_RETRIES = 2  
 COOKIE_FILE = os.getenv("COOKIE_FILE", "cookies.json")
 CHROME_DRIVER_PATH = ChromeDriverManager().install()
 
-DAY_OUTPUT_START_COL = 3  # Data starts in Column C
+DAY_OUTPUT_START_COL = 3  
 
 # ---------------- UTILS ---------------- #
 def col_num_to_letter(n):
@@ -82,7 +82,7 @@ def create_driver():
     opts.add_argument("--disable-blink-features=AutomationControlled")
     opts.add_argument("--incognito")
     opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-    opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 
     drv = webdriver.Chrome(service=Service(CHROME_DRIVER_PATH), options=opts)
     drv.set_page_load_timeout(60)
@@ -122,7 +122,8 @@ def restart_driver():
 # ---------------- SCRAPER ---------------- #
 def get_values(drv):
     try:
-        elements = drv.find_elements(By.CSS_SELECTOR, "div[class*='valueValue']")
+        # Broadened selector to catch potential variations in class names
+        elements = drv.find_elements(By.CSS_SELECTOR, "div[class*='valueValue'], span[class*='valueValue']")
         vals = [el.text.strip() for el in elements if el.text.strip()]
         return vals
     except Exception as e:
@@ -136,16 +137,25 @@ def scrape_day(url):
     for attempt in range(2):
         try:
             drv = ensure_driver()
+            if attempt == 1:
+                log(f"   🔄 Retry attempt for URL...")
+                drv.refresh()
+                time.sleep(3)
+            
             drv.get(url)
-            wait = WebDriverWait(drv, 20)
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div[class*='valueValue']")))
+            
+            # Wait for any element with the value class to actually contain text
+            wait = WebDriverWait(drv, 25)
+            wait.until(lambda d: any(el.text.strip() for el in d.find_elements(By.CSS_SELECTOR, "[class*='valueValue']")))
+            
             time.sleep(2)
             vals = get_values(drv)
 
+            # If still short, try scrolling to trigger lazy loading
             if len(vals) < EXPECTED_COUNT:
-                for scroll_y in [500, 1000, 1500, 2000]:
+                for scroll_y in [600, 1200, 1800]:
                     drv.execute_script(f"window.scrollTo(0, {scroll_y});")
-                    time.sleep(1.5)
+                    time.sleep(1.2)
                     new_vals = get_values(drv)
                     if len(new_vals) > len(vals):
                         vals = new_vals
@@ -154,18 +164,19 @@ def scrape_day(url):
 
             browser_url = drv.current_url
             found_count = len(vals)
+            
             if found_count >= EXPECTED_COUNT:
                 return vals[:EXPECTED_COUNT], "OK", url, browser_url
-            else:
-                log(f"   ⚠️ Only found {found_count} values on attempt {attempt+1}")
-                if attempt == 1 and found_count == 0:
-                    return [""] * EXPECTED_COUNT, "EMPTY", url, browser_url
+            elif found_count > 0:
+                log(f"   ⚠️ Partial data: found {found_count}/{EXPECTED_COUNT}")
                 padded_vals = (vals + [""] * EXPECTED_COUNT)[:EXPECTED_COUNT]
                 return padded_vals, f"Only {found_count} Found", url, browser_url
+            
         except Exception as e:
             log(f"   ❌ Scrape Attempt {attempt + 1} Failed: {str(e)[:50]}")
             restart_driver()
-    return [""] * EXPECTED_COUNT, "Failed", url, ""
+            
+    return [""] * EXPECTED_COUNT, "EMPTY", url, ""
 
 # ---------------- MAIN ---------------- #
 def connect_sheets():
@@ -190,7 +201,6 @@ def process_row(i, company_list, url_list, current_date):
         {"range": f"{SHEET_URL_COL}{row_idx}", "values": [[sheet_url_used]]},
         {"range": f"{BROWSER_URL_COL}{row_idx}", "values": [[browser_url_used]]}
     ]
-    # Return success only if we actually got the expected amount of data
     is_success = (status == "OK")
     return row_payload, is_success
 
@@ -208,7 +218,6 @@ batch_list = []
 current_date = date.today().strftime("%m/%d/%Y")
 loop_end = min(END_ROW, len(company_list))
 
-# --- FIRST PASS ---
 for i in range(last_i, loop_end):
     payload, success = process_row(i, company_list, url_list, current_date)
     batch_list.extend(payload)
@@ -216,7 +225,6 @@ for i in range(last_i, loop_end):
     if not success:
         failed_queue.append(i)
 
-    # Save checkpoint
     with open(checkpoint_file, "w") as f:
         f.write(str(i + 1))
 
@@ -228,7 +236,6 @@ for i in range(last_i, loop_end):
         api_retry(sheet_data.batch_update, batch_list, value_input_option="RAW")
         batch_list = []
 
-# Final upload for first pass
 if batch_list:
     api_retry(sheet_data.batch_update, batch_list, value_input_option="RAW")
     batch_list = []
@@ -237,19 +244,14 @@ if batch_list:
 retry_attempt = 1
 while failed_queue and retry_attempt <= MAX_RETRIES:
     log(f"🔁 Starting Retry Pass {retry_attempt} for {len(failed_queue)} symbols...")
-    
-    # Wait and restart driver for a clean session
-    wait_time = random.randint(15, 30)
-    log(f"⏳ Waiting {wait_time}s before retries...")
+    wait_time = random.randint(20, 40)
+    log(f"⏳ Cooling down for {wait_time}s...")
     time.sleep(wait_time)
     restart_driver()
     
     still_failing = []
-    
     for idx, i in enumerate(failed_queue):
-        # Random sleep between symbols to avoid bot detection
-        time.sleep(random.uniform(2, 5))
-        
+        time.sleep(random.uniform(3, 6))
         payload, success = process_row(i, company_list, url_list, current_date)
         batch_list.extend(payload)
         
