@@ -168,7 +168,7 @@ def scrape_day(url):
 # ---------------- MAIN ---------------- #
 def connect_sheets():
     gc = gspread.service_account("credentials.json")
-    sh_main = gc.open("Stock List").worksheet("Sheet1")
+    sh_main = gc.open("STOCKLIST 2").worksheet("Sheet1")
     sh_data = gc.open("MV2 DAY").worksheet("Sheet1")
     return sh_main, sh_data
 
